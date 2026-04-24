@@ -1,0 +1,4 @@
+server/models
+server/__pycache__
+server/.venv
+node_modules/
