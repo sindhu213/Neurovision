@@ -22,12 +22,14 @@ export function DemoPage() {
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const tones = [
+const tones = [
     { id: "happy", label: "Happy", emoji: "😊" },
     { id: "sad", label: "Sad", emoji: "😢" },
     { id: "formal", label: "Formal", emoji: "🎩" },
     { id: "casual", label: "Casual", emoji: "😎" },
-    { id: "humorous", label: "Humorous", emoji: "😂" },
+    { id: "funny", label: "Humorous", emoji: "😂" },
+    { id: "romantic", label: "Romantic", emoji: "💕" },
+    { id: "motivational", label: "Motivational", emoji: "💪" },
   ];
 
   const languages = [
@@ -63,7 +65,7 @@ export function DemoPage() {
   );
 
   // ── Caption generation ──────────────────────────────────────────────────────
-  const generateCaptions = async () => {
+ const generateCaptions = async () => {
     if (!uploadedImage) return;
     setIsGenerating(true);
     setError(null);
@@ -71,10 +73,11 @@ export function DemoPage() {
       const fd = new FormData();
       fd.append("image", uploadedImage);
       fd.append("tone", selectedTone);
-      const res = await fetch(`${API_BASE}/caption`, { method: "POST", body: fd });
+      const res = await fetch(`${API_BASE}/tone-caption`, { method: "POST", body: fd });
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data = await res.json();
-      setCaptions(data.captions);
+      // Backend returns single caption, wrap in array
+      setCaptions([data.toned_caption, data.base_caption]);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Caption generation failed.");
     } finally {
@@ -85,7 +88,7 @@ export function DemoPage() {
   // ── Multilingual captions ───────────────────────────────────────────────────
   const [multiCaptions, setMultiCaptions] = useState<Record<string, string>>({});
 
-  const generateMultilingual = async () => {
+ const generateMultilingual = async () => {
     if (!uploadedImage) return;
     setIsGenerating(true);
     setError(null);
@@ -95,13 +98,11 @@ export function DemoPage() {
         selectedLanguages.map(async (langId) => {
           const fd = new FormData();
           fd.append("image", uploadedImage);
-          // We encode language in the tone field as a hint; adjust if your
-          // backend supports a dedicated lang param.
-          fd.append("tone", selectedTone + langPromptMap[langId]);
-          const res = await fetch(`${API_BASE}/caption`, { method: "POST", body: fd });
+          fd.append("tone", selectedTone);
+          const res = await fetch(`${API_BASE}/tone-caption`, { method: "POST", body: fd });
           if (!res.ok) throw new Error(`Server error: ${res.status}`);
           const data = await res.json();
-          results[langId] = data.captions[0] ?? "";
+          results[langId] = data.toned_caption ?? "";
         })
       );
       setMultiCaptions(results);
