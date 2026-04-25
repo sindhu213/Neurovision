@@ -1,9 +1,10 @@
 fastapi
 uvicorn
+python-multipart
 transformers
 torch
-Pillow
-python-multipart
-accelerate
+pillow
+python-dotenv
+groq
 sentencepiece
-torchvision
+sacremoses

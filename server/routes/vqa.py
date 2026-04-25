@@ -1,10 +1,10 @@
 from fastapi import APIRouter, UploadFile, File, Form
-from services.blip_model import ask_question
+from services.vqa_service import ask_question
 
 router = APIRouter()
 
 @router.post("/vqa")
-async def visual_qa(
+async def vqa(
     image: UploadFile = File(...),
     question: str = Form(...)
 ):
