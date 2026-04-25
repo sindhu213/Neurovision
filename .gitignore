@@ -2,4 +2,5 @@
 server/models
 server/__pycache__
 server/.venv
+server/venv
 node_modules/
