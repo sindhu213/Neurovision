@@ -16,7 +16,7 @@ export function FeaturesPage() {
     },
     {
       icon: "🌐",
-      title: "7+ Languages",
+      title: "4+ Languages",
       description: "Translate captions into Hindi, Bengali, Punjabi, Tamil, Telugu, Marathi, and more Indic languages.",
       gradient: "from-green-500/20 to-teal-500/20",
       border: "hover:border-green-500/50",

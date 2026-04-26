@@ -20,32 +20,25 @@ export function DemoPage() {
   const [vqaQuestion, setVqaQuestion] = useState("");
   const [vqaMessages, setVqaMessages] = useState<VQAMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [multiCaptions, setMultiCaptions] = useState<Record<string, string>>({});
+  const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-const tones = [
+  const tones = [
     { id: "happy", label: "Happy", emoji: "😊" },
-    { id: "sad", label: "Sad", emoji: "😢" },
     { id: "formal", label: "Formal", emoji: "🎩" },
     { id: "casual", label: "Casual", emoji: "😎" },
     { id: "funny", label: "Humorous", emoji: "😂" },
-    { id: "romantic", label: "Romantic", emoji: "💕" },
-    { id: "motivational", label: "Motivational", emoji: "💪" },
+    { id: "motivational", label: "Inspire", emoji: "💪" },
   ];
 
   const languages = [
-    { id: "english", label: "English", native: "English" },
-    { id: "hindi", label: "Hindi", native: "हिंदी" },
-    { id: "bengali", label: "Bengali", native: "বাংলা" },
-    { id: "punjabi", label: "Punjabi", native: "ਪੰਜਾਬੀ" },
+    { id: "english", label: "English", native: "EN" },
+    { id: "hindi", label: "Hindi", native: "HI" },
+    { id: "bengali", label: "Bengali", native: "BN" },
+    { id: "punjabi", label: "Punjabi", native: "PJ" },
+    { id: "gujarati", label: "Gujarati", native: "GU" },
   ];
-
-  // Map language IDs to translation prompt suffixes sent to caption endpoint
-  const langPromptMap: Record<string, string> = {
-    english: "",
-    hindi: " Translate to Hindi.",
-    bengali: " Translate to Bengali.",
-    punjabi: " Translate to Punjabi.",
-  };
 
   const handleFileChange = useCallback((file: File) => {
     setUploadedImage(file);
@@ -55,17 +48,13 @@ const tones = [
     setError(null);
   }, []);
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      const file = e.dataTransfer.files[0];
-      if (file && file.type.startsWith("image/")) handleFileChange(file);
-    },
-    [handleFileChange]
-  );
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith("image/")) handleFileChange(file);
+  }, [handleFileChange]);
 
-  // ── Caption generation ──────────────────────────────────────────────────────
- const generateCaptions = async () => {
+  const generateCaptions = async () => {
     if (!uploadedImage) return;
     setIsGenerating(true);
     setError(null);
@@ -76,405 +65,309 @@ const tones = [
       const res = await fetch(`${API_BASE}/tone-caption`, { method: "POST", body: fd });
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data = await res.json();
-      // Backend returns single caption, wrap in array
       setCaptions([data.toned_caption, data.base_caption]);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Caption generation failed.");
+    } catch (err: any) {
+      setError(err.message || "Caption generation failed.");
     } finally {
       setIsGenerating(false);
     }
   };
 
-  // ── Multilingual captions ───────────────────────────────────────────────────
-  const [multiCaptions, setMultiCaptions] = useState<Record<string, string>>({});
-
- const generateMultilingual = async () => {
+  const generateMultilingual = async () => {
     if (!uploadedImage) return;
     setIsGenerating(true);
-    setError(null);
     try {
+      const fd = new FormData();
+      fd.append("image", uploadedImage);
+      fd.append("tone", selectedTone);
+      const res = await fetch(`${API_BASE}/tone-caption`, { method: "POST", body: fd });
+      const data = await res.json();
+      const baseCaption = data.toned_caption;
       const results: Record<string, string> = {};
-      await Promise.all(
-        selectedLanguages.map(async (langId) => {
-          const fd = new FormData();
-          fd.append("image", uploadedImage);
-          fd.append("tone", selectedTone);
-          const res = await fetch(`${API_BASE}/tone-caption`, { method: "POST", body: fd });
-          if (!res.ok) throw new Error(`Server error: ${res.status}`);
-          const data = await res.json();
-          results[langId] = data.toned_caption ?? "";
-        })
-      );
+
+      for (const lang of selectedLanguages) {
+        if (lang === "english") { results[lang] = baseCaption; continue; }
+        const fd2 = new FormData();
+        fd2.append("text", baseCaption);
+        fd2.append("language", lang);
+        const r = await fetch(`${API_BASE}/translate`, { method: "POST", body: fd2 });
+        const d = await r.json();
+        results[lang] = d.text;
+      }
       setMultiCaptions(results);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Multilingual generation failed.");
+    } catch (err) {
+      setError("Multilingual failed");
     } finally {
       setIsGenerating(false);
     }
   };
 
-  // ── VQA ────────────────────────────────────────────────────────────────────
   const askQuestion = async () => {
     if (!uploadedImage || !vqaQuestion.trim()) return;
     const question = vqaQuestion.trim();
     setVqaMessages((prev) => [...prev, { role: "user", text: question }]);
     setVqaQuestion("");
     setIsGenerating(true);
-    setError(null);
     try {
       const fd = new FormData();
       fd.append("image", uploadedImage);
       fd.append("question", question);
       const res = await fetch(`${API_BASE}/vqa`, { method: "POST", body: fd });
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data = await res.json();
       setVqaMessages((prev) => [...prev, { role: "ai", text: data.answer }]);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "VQA request failed.");
+    } catch (err) {
+      setError("VQA failed");
     } finally {
       setIsGenerating(false);
     }
   };
 
-  // ── Unified generate handler ────────────────────────────────────────────────
   const handleGenerate = () => {
-    if (!uploadedImage) {
-      setError("Please upload an image first.");
-      return;
-    }
+    if (!uploadedImage) return setError("Upload an image first.");
     if (activeTab === "captions") generateCaptions();
     else if (activeTab === "multilingual") generateMultilingual();
     else if (activeTab === "vqa") askQuestion();
   };
 
-  const copyToClipboard = (text: string) => navigator.clipboard.writeText(text);
+  const copyToClipboard = async (text: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
-    <div className="min-h-screen py-12 px-6">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="text-center mb-12">
-          <h1 className="text-4xl md:text-5xl font-bold mb-4">
-            <span className="bg-gradient-to-r from-[#6C63FF] to-[#2A5CFF] bg-clip-text text-transparent">
-              Interactive Demo
-            </span>
-          </h1>
-          <p className="text-gray-400 text-lg">
-            Upload an image and explore NeuroVision AI's capabilities
-          </p>
-        </div>
+    <div className="min-h-screen bg-[#050505] text-white selection:bg-[#6C63FF]/30 overflow-x-hidden relative">
+      
+      {/* --- FLOATING BACKGROUND ANIMATION --- */}
+      <div className="fixed inset-0 z-0 pointer-events-none">
+        <div className="absolute top-[-20%] left-[-10%] w-[70%] h-[70%] bg-[#6C63FF]/10 rounded-full blur-[120px] animate-pulse duration-[8s]" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] bg-[#2A5CFF]/10 rounded-full blur-[120px] animate-pulse duration-[10s]" />
+        {/* Animated accent orbs */}
+        <div className="absolute top-1/4 left-1/2 w-32 h-32 bg-[#6C63FF]/20 rounded-full blur-3xl animate-bounce duration-[15s]" />
+      </div>
 
-        <div className="grid lg:grid-cols-[30%_70%] gap-6">
-          {/* ── Left Panel ── */}
-          <div className="space-y-6">
-            {/* Image Upload */}
-            <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-6">
-              <h3 className="text-lg font-semibold mb-4">Upload Image</h3>
-              <div
-                onDrop={handleDrop}
-                onDragOver={(e) => e.preventDefault()}
-                onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-white/20 rounded-lg p-8 text-center hover:border-[#6C63FF]/50 transition-all cursor-pointer group"
-              >
-                <svg
-                  className="w-12 h-12 mx-auto mb-3 text-gray-400 group-hover:text-[#6C63FF] transition-colors"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
+      <div className="relative z-10 max-w-7xl mx-auto px-6 py-12">
+        {/* Header Section */}
+        <header className="flex flex-col md:flex-row items-center justify-between mb-16 gap-12">
+          <div className="text-left flex-1">
+            <div className="inline-block px-3 py-1 rounded-full border border-white/10 bg-white/5 text-[10px] font-bold tracking-[0.2em] text-[#6C63FF] mb-6 uppercase">
+              Vision Intelligence System
+            </div>
+            <h1 className="text-6xl md:text-8xl font-black tracking-tighter mb-6 leading-tight">
+              Neuro<span className="text-transparent bg-clip-text bg-gradient-to-r from-[#6C63FF] to-[#2A5CFF] animate-gradient">Vision</span>
+            </h1>
+            <p className="text-gray-400 max-w-md text-lg leading-relaxed font-medium">
+              A high-performance multi-modal neural network for real-time visual reasoning and captioning.
+            </p>
+          </div>
+          
+          {/* DYNAMIC IMAGE CONTAINER */}
+          <div 
+            onClick={() => fileInputRef.current?.click()}
+            onDrop={handleDrop}
+            onDragOver={(e) => e.preventDefault()}
+            className="group relative cursor-pointer flex-shrink-0"
+          >
+            <div className="absolute -inset-1 bg-gradient-to-r from-[#6C63FF] to-[#2A5CFF] rounded-3xl blur opacity-25 group-hover:opacity-60 transition duration-500"></div>
+            <div className={`relative bg-[#0D0D0D] border border-white/10 rounded-3xl overflow-hidden transition-all duration-700 ease-in-out flex items-center justify-center 
+              ${previewUrl ? 'w-auto max-w-[500px] h-auto p-2' : 'w-[320px] aspect-square'}`}>
+              
+              {previewUrl ? (
+                <img src={previewUrl} className="max-w-full max-h-[450px] object-contain rounded-2xl shadow-2xl" alt="Preview" />
+              ) : (
+                <div className="flex flex-col items-center">
+                  <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4 group-hover:bg-[#6C63FF]/20 transition-all">
+                    <svg className="w-8 h-8 text-gray-400 group-hover:text-[#6C63FF]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 4v16m8-8H4"></path></svg>
+                  </div>
+                  <p className="text-gray-500 text-sm font-mono tracking-widest uppercase">Load_Texture</p>
+                </div>
+              )}
+              <input ref={fileInputRef} type="file" className="hidden" onChange={(e) => e.target.files?.[0] && handleFileChange(e.target.files[0])} />
+            </div>
+          </div>
+        </header>
+
+        <div className="grid lg:grid-cols-[360px_1fr] gap-12 items-start">
+          
+          {/* Navigation & Controls Sidebar */}
+          <aside className="space-y-6 bg-white/[0.03] border border-white/10 p-6 rounded-[2.5rem] backdrop-blur-3xl sticky top-12">
+            <div className="space-y-2">
+              {(["captions", "vqa", "multilingual"] as Tab[]).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`w-full flex items-center justify-between px-6 py-4 rounded-2xl transition-all duration-500 ${
+                    activeTab === tab 
+                      ? "bg-[#6C63FF] text-white shadow-2xl shadow-[#6C63FF]/30 translate-x-2" 
+                      : "bg-white/5 text-gray-500 hover:bg-white/10"
+                  }`}
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                  />
-                </svg>
-                <p className="text-sm text-gray-400 group-hover:text-gray-300">
-                  {uploadedImage ? uploadedImage.name : "Drag & drop or click to upload"}
-                </p>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleFileChange(f);
-                  }}
-                />
-              </div>
-
-              {/* Preview */}
-              <div className="mt-4 bg-gradient-to-br from-purple-500/20 to-blue-500/20 rounded-lg h-32 flex items-center justify-center overflow-hidden">
-                {previewUrl ? (
-                  <img
-                    src={previewUrl}
-                    alt="Preview"
-                    className="h-full w-full object-cover rounded-lg"
-                  />
-                ) : (
-                  <svg
-                    className="w-16 h-16 text-white/30"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                    />
-                  </svg>
-                )}
-              </div>
+                  <span className="font-bold uppercase tracking-widest text-xs">{tab}</span>
+                  <div className={`w-1.5 h-1.5 rounded-full ${activeTab === tab ? "bg-white shadow-[0_0_8px_white]" : "bg-white/10"}`} />
+                </button>
+              ))}
             </div>
 
-            {/* Tone Selector */}
-            <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-6">
-              <h3 className="text-lg font-semibold mb-4">Caption Tone</h3>
-              <div className="grid grid-cols-2 gap-2">
-                {tones.map((tone) => (
+            <div className="pt-4 border-t border-white/5">
+              <label className="text-[10px] font-black text-gray-600 uppercase tracking-[0.2em] mb-4 block">Engine Tone</label>
+              <div className="grid grid-cols-3 gap-2">
+                {tones.map((t) => (
                   <button
-                    key={tone.id}
-                    onClick={() => setSelectedTone(tone.id)}
-                    className={`p-3 rounded-lg border transition-all ${
-                      selectedTone === tone.id
-                        ? "bg-[#6C63FF]/20 border-[#6C63FF]"
-                        : "bg-white/5 border-white/10 hover:border-white/30"
+                    key={t.id}
+                    onClick={() => setSelectedTone(t.id)}
+                    className={`flex flex-col items-center gap-1 p-3 rounded-xl border transition-all duration-300 ${
+                      selectedTone === t.id ? "bg-[#6C63FF]/10 border-[#6C63FF] text-[#6C63FF]" : "bg-white/5 border-transparent text-gray-500"
                     }`}
                   >
-                    <div className="text-2xl mb-1">{tone.emoji}</div>
-                    <div className="text-xs">{tone.label}</div>
+                    <span className="text-lg">{t.emoji}</span>
+                    <span className="text-[10px] font-bold">{t.label}</span>
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Language Selector */}
-            <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-6">
-              <h3 className="text-lg font-semibold mb-4">Languages</h3>
-              <div className="space-y-2">
-                {languages.map((lang) => (
-                  <label key={lang.id} className="flex items-center gap-3 cursor-pointer group">
-                    <input
-                      type="checkbox"
-                      checked={selectedLanguages.includes(lang.id)}
-                      onChange={(e) => {
-                        setSelectedLanguages((prev) =>
-                          e.target.checked
-                            ? [...prev, lang.id]
-                            : prev.filter((l) => l !== lang.id)
-                        );
-                      }}
-                      className="w-4 h-4 rounded border-white/20 bg-white/5"
-                    />
-                    <span className="text-sm group-hover:text-[#6C63FF] transition-colors">
-                      {lang.label} ({lang.native})
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* VQA Input (shown when VQA tab is active) */}
-            {activeTab === "vqa" && (
-              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-6">
-                <h3 className="text-lg font-semibold mb-4">Ask a Question</h3>
-                <input
-                  type="text"
-                  value={vqaQuestion}
-                  onChange={(e) => setVqaQuestion(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleGenerate()}
-                  placeholder="What's in this image?"
-                  className="w-full bg-white/5 border border-white/20 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-[#6C63FF] transition-colors"
-                />
+            {/* FIX: LANGUAGE SELECTION VISIBILITY */}
+            {activeTab === "multilingual" && (
+              <div className="pt-4 border-t border-white/5 animate-in fade-in slide-in-from-top-2">
+                <label className="text-[10px] font-black text-gray-600 uppercase tracking-[0.2em] mb-4 block">Translation Matrix</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {languages.map((l) => (
+                    <button
+                      key={l.id}
+                      onClick={() => setSelectedLanguages(prev => prev.includes(l.id) ? prev.filter(x => x !== l.id) : [...prev, l.id])}
+                      className={`px-4 py-3 rounded-xl border text-left transition-all duration-300 ${
+                        selectedLanguages.includes(l.id) ? "bg-[#2A5CFF]/10 border-[#2A5CFF] text-white shadow-inner" : "bg-white/5 border-transparent text-gray-500"
+                      }`}
+                    >
+                      <div className="text-sm font-black">{l.native}</div>
+                      <div className="text-[9px] font-bold opacity-40 uppercase tracking-tighter">{l.label}</div>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
-            {/* Error */}
-            {error && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-sm text-red-400">
-                ⚠️ {error}
-              </div>
-            )}
-
-            {/* Generate Button */}
             <button
               onClick={handleGenerate}
               disabled={isGenerating || !uploadedImage}
-              className="w-full py-4 bg-gradient-to-r from-[#6C63FF] to-[#2A5CFF] rounded-lg font-semibold hover:shadow-lg hover:shadow-[#6C63FF]/50 transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+              className="group relative w-full py-5 rounded-2xl bg-white text-black font-black text-xs uppercase tracking-[0.3em] overflow-hidden transition-all active:scale-[0.98] disabled:opacity-20 mt-4"
             >
-              {isGenerating ? "Generating…" : "Generate"}
+              <div className="absolute inset-0 bg-gradient-to-r from-[#6C63FF] to-[#2A5CFF] opacity-0 group-hover:opacity-100 transition-opacity" />
+              <span className="relative group-hover:text-white transition-colors">
+                {isGenerating ? "Processing..." : "Execute_Task"}
+              </span>
             </button>
-          </div>
+          </aside>
 
-          {/* ── Right Panel ── */}
-          <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-6">
-            {/* Tabs */}
-            <div className="flex gap-4 mb-6 border-b border-white/10">
-              {(["captions", "vqa", "multilingual"] as Tab[]).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`pb-3 px-2 font-semibold transition-colors relative capitalize ${
-                    activeTab === tab ? "text-[#6C63FF]" : "text-gray-400 hover:text-gray-300"
-                  }`}
-                >
-                  {tab === "captions" ? "📝 Captions" : tab === "vqa" ? "❓ VQA" : "🌐 Multilingual"}
-                  {activeTab === tab && (
-                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#6C63FF]" />
-                  )}
-                </button>
-              ))}
-            </div>
-
-            {/* ── Captions Tab ── */}
-            {activeTab === "captions" && (
-              <div className="space-y-4">
-                {isGenerating ? (
-                  <div className="space-y-3">
-                    {[1, 2, 3, 4].map((i) => (
-                      <div
-                        key={i}
-                        className="bg-white/5 rounded-lg p-4 border border-white/10 animate-pulse"
-                      >
-                        <div className="h-4 bg-white/10 rounded w-3/4" />
-                      </div>
-                    ))}
+          {/* Results Main Window */}
+          <main className="min-h-[600px]">
+            {activeTab === "vqa" ? (
+              <div className="flex flex-col h-[550px] bg-white/[0.03] border border-white/10 rounded-[3rem] overflow-hidden backdrop-blur-xl">
+                <div className="px-8 py-5 border-b border-white/5 bg-black/20 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_10px_#22c55e]" />
+                    <span className="font-mono text-[10px] tracking-[0.3em] text-gray-500 uppercase">Neural_Link_Stable</span>
                   </div>
-                ) : captions.length > 0 ? (
-                  <>
-                    <div className="bg-gradient-to-r from-[#6C63FF]/20 to-[#2A5CFF]/20 rounded-lg p-6 border border-[#6C63FF]/30">
-                      <div className="flex items-start justify-between mb-2">
-                        <span className="text-xs text-[#6C63FF] font-semibold">PRIMARY CAPTION</span>
-                        <button
-                          onClick={() => copyToClipboard(captions[0])}
-                          className="text-xs text-gray-400 hover:text-white transition-colors"
-                        >
-                          📋 Copy
+                  <span className="text-[10px] font-bold text-gray-700 uppercase">v1.0.4</span>
+                </div>
+                
+                <div className="flex-1 p-8 space-y-6 overflow-y-auto custom-scrollbar">
+                  {vqaMessages.length === 0 && (
+                    <div className="h-full flex flex-col items-center justify-center opacity-20 grayscale">
+                       <svg className="w-12 h-12 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+                       <p className="text-xs font-mono uppercase tracking-[.2em]">Idle - Awaiting Input</p>
+                    </div>
+                  )}
+                  {vqaMessages.map((msg, i) => (
+                    <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} animate-in fade-in slide-in-from-bottom-2`}>
+                      <div className={`max-w-[85%] px-5 py-3.5 rounded-2xl text-sm leading-relaxed font-medium ${
+                        msg.role === "user" 
+                          ? "bg-[#6C63FF] text-white rounded-tr-none shadow-xl shadow-[#6C63FF]/10" 
+                          : "bg-white/5 text-gray-200 rounded-tl-none border border-white/5"
+                      }`}>
+                        {msg.text}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="p-6 bg-black/40 border-t border-white/5">
+                  <div className="relative group">
+                    <input
+                      value={vqaQuestion}
+                      onChange={(e) => setVqaQuestion(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && askQuestion()}
+                      placeholder="Query visual context..."
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl pl-6 pr-14 py-4 text-sm focus:outline-none focus:border-[#6C63FF]/50 transition-all placeholder:text-gray-700"
+                    />
+                    <button onClick={askQuestion} className="absolute right-3 top-3 p-2 bg-[#6C63FF] rounded-xl hover:bg-[#5a52e6] transition-all active:scale-90">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="grid gap-4 animate-in fade-in duration-700">
+                {isGenerating ? (
+                  <div className="space-y-4">
+                    {[1, 2, 3].map(n => <div key={n} className="h-24 bg-white/5 rounded-[2rem] animate-pulse border border-white/5" />)}
+                  </div>
+                ) : activeTab === "captions" ? (
+                  captions.map((cap, i) => (
+                    <div key={i} className="group relative bg-white/[0.02] border border-white/5 p-8 rounded-[2.5rem] hover:bg-white/[0.05] hover:border-white/10 transition-all duration-500">
+                      <div className="flex items-center justify-between mb-4">
+                        <span className="text-[9px] font-black text-[#6C63FF] uppercase tracking-[0.3em]">Variant_0{i+1}</span>
+                        <button onClick={() => copyToClipboard(cap)} className="opacity-0 group-hover:opacity-100 transition-opacity p-2 hover:bg-white/10 rounded-lg">
+                          <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
                         </button>
                       </div>
-                      <p className="text-lg">{captions[0]}</p>
-                    </div>
-                    <div className="grid md:grid-cols-2 gap-3">
-                      {captions.slice(1).map((caption, idx) => (
-                        <div
-                          key={idx}
-                          className="bg-white/5 rounded-lg p-4 border border-white/10 hover:border-white/30 transition-all group"
-                        >
-                          <div className="flex items-start justify-between mb-2">
-                            <span className="text-xs text-gray-400">VARIANT {idx + 1}</span>
-                            <button
-                              onClick={() => copyToClipboard(caption)}
-                              className="text-xs text-gray-400 group-hover:text-white transition-colors"
-                            >
-                              📋
-                            </button>
-                          </div>
-                          <p className="text-sm">{caption}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-48 text-gray-500">
-                    <span className="text-4xl mb-3">📷</span>
-                    <p className="text-sm">Upload an image and click Generate</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ── VQA Tab ── */}
-            {activeTab === "vqa" && (
-              <div className="space-y-4">
-                {vqaMessages.length === 0 && !isGenerating && (
-                  <div className="flex flex-col items-center justify-center h-48 text-gray-500">
-                    <span className="text-4xl mb-3">❓</span>
-                    <p className="text-sm">Type a question in the left panel and click Generate</p>
-                  </div>
-                )}
-                {vqaMessages.map((msg, i) => (
-                  <div
-                    key={i}
-                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                  >
-                    <div
-                      className={`rounded-lg p-4 max-w-md ${
-                        msg.role === "user"
-                          ? "bg-[#6C63FF]/20 border border-[#6C63FF]/30"
-                          : "bg-white/5 border border-white/10"
-                      }`}
-                    >
-                      <p className="text-sm">{msg.text}</p>
-                    </div>
-                  </div>
-                ))}
-                {isGenerating && (
-                  <div className="flex justify-start">
-                    <div className="bg-white/5 border border-white/10 rounded-lg p-4">
-                      <div className="flex gap-1">
-                        <span className="w-2 h-2 bg-[#6C63FF] rounded-full animate-bounce [animation-delay:0ms]" />
-                        <span className="w-2 h-2 bg-[#6C63FF] rounded-full animate-bounce [animation-delay:150ms]" />
-                        <span className="w-2 h-2 bg-[#6C63FF] rounded-full animate-bounce [animation-delay:300ms]" />
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ── Multilingual Tab ── */}
-            {activeTab === "multilingual" && (
-              <div className="space-y-4">
-                {isGenerating ? (
-                  selectedLanguages.map((id) => (
-                    <div
-                      key={id}
-                      className="bg-white/5 rounded-lg p-5 border border-white/10 animate-pulse"
-                    >
-                      <div className="h-4 bg-white/10 rounded w-1/3 mb-3" />
-                      <div className="h-4 bg-white/10 rounded w-2/3" />
+                      <p className="text-xl font-bold tracking-tight text-gray-100 leading-snug">{cap}</p>
                     </div>
                   ))
-                ) : Object.keys(multiCaptions).length > 0 ? (
-                  selectedLanguages.map((langId) => {
-                    const lang = languages.find((l) => l.id === langId);
-                    return (
-                      <div
-                        key={langId}
-                        className="bg-white/5 rounded-lg p-5 border border-white/10 hover:border-white/30 transition-all group"
-                      >
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold text-[#6C63FF]">
-                              {lang?.native}
-                            </span>
-                            <span className="text-xs text-gray-400">({lang?.label})</span>
-                          </div>
-                          <button
-                            onClick={() => copyToClipboard(multiCaptions[langId] ?? "")}
-                            className="text-xs text-gray-400 group-hover:text-white transition-colors"
-                          >
-                            📋 Copy
-                          </button>
-                        </div>
-                        <p className="text-base">{multiCaptions[langId]}</p>
-                      </div>
-                    );
-                  })
                 ) : (
-                  <div className="flex flex-col items-center justify-center h-48 text-gray-500">
-                    <span className="text-4xl mb-3">🌐</span>
-                    <p className="text-sm">Select languages and click Generate</p>
-                  </div>
+                  Object.entries(multiCaptions).map(([lang, text]) => (
+                    <div key={lang} className="bg-white/[0.02] border border-white/5 p-6 rounded-[2rem] flex items-center gap-8 group hover:border-[#2A5CFF]/20 transition-all duration-500">
+                      <div className="w-16 h-16 rounded-2xl bg-[#2A5CFF]/10 flex flex-col items-center justify-center text-[#2A5CFF] group-hover:scale-110 transition-transform">
+                        <span className="font-black text-sm uppercase">{lang.slice(0, 2)}</span>
+                      </div>
+                      <p className="flex-1 text-lg font-medium text-gray-300 leading-relaxed">{text}</p>
+                    </div>
+                  ))
+                )}
+                
+                {!isGenerating && captions.length === 0 && Object.keys(multiCaptions).length === 0 && (
+                   <div className="h-[400px] border-2 border-dashed border-white/5 rounded-[3rem] flex flex-col items-center justify-center opacity-20">
+                      <div className="w-20 h-20 rounded-full border border-white/20 flex items-center justify-center mb-6">
+                        <div className="w-2 h-2 bg-white rounded-full animate-ping" />
+                      </div>
+                      <p className="font-mono text-[10px] tracking-[0.4em] uppercase">Matrix_System_Standby</p>
+                   </div>
                 )}
               </div>
             )}
-          </div>
+          </main>
         </div>
       </div>
+
+      {/* Modern Copy Toast */}
+      {copied && (
+        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-[#6C63FF] text-white px-10 py-4 rounded-full font-black text-[10px] uppercase tracking-[0.3em] shadow-2xl z-50 animate-in slide-in-from-bottom-10 flex items-center gap-3">
+          <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+          Content Synced
+        </div>
+      )}
+
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 10px; }
+        .animate-gradient { background-size: 200% 200%; animation: gradient 5s ease infinite; }
+        @keyframes gradient { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+      `}</style>
     </div>
   );
 }
+
+
+
+

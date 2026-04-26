@@ -1,8 +1,16 @@
 from fastapi import APIRouter, Form
-from services.translator import translate_all
+from services.translator_service import translate
 
 router = APIRouter()
 
 @router.post("/translate")
-async def translate(text: str = Form(...)):
-    return translate_all(text)
+async def translate_api(
+    text: str = Form(...),
+    language: str = Form(...)
+):
+    result = translate(text, language)
+
+    return {
+        "language": language,
+        "text": result
+    }
