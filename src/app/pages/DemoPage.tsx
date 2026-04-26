@@ -37,6 +37,7 @@ export function DemoPage() {
     { id: "hindi", label: "Hindi", native: "HI" },
     { id: "bengali", label: "Bengali", native: "BN" },
     { id: "punjabi", label: "Punjabi", native: "PJ" },
+    { id: "gujarati", label: "Gujarati", native: "GU" },
   ];
 
   const handleFileChange = useCallback((file: File) => {

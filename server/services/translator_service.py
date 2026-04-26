@@ -13,11 +13,14 @@ LANGS = {
     "hindi": "hin_Deva",
     "bengali": "ben_Beng",
     "punjabi": "pan_Guru",
-    "english": "eng_Latn"
+    "english": "eng_Latn",
+    "gujarati": "guj_Gujr",
 }
 
 
 def translate(text, lang):
+    print(f"Available languages: {list(LANGS.keys())}")  # Debug
+    print(f"Requested language: {lang}")  # Debug
     tokenizer.src_lang = "eng_Latn"
 
     inputs = tokenizer(text, return_tensors="pt").to(device)
