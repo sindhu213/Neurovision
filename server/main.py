@@ -23,6 +23,5 @@ app.include_router(caption_router)
 app.include_router(vqa_router)
 app.include_router(translate_router)
 
-
 # python3 -m uvicorn main:app --port 8000
 # python -m uvicorn main:app --port 8000

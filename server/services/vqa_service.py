@@ -18,7 +18,6 @@ model = BlipForQuestionAnswering.from_pretrained(
 
 model.eval()
 
-
 def ask_question(image_bytes, question):
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 

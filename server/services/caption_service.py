@@ -23,7 +23,6 @@ model.eval()
 
 print("Caption Model Loaded")
 
-
 def generate_caption(image: Image.Image):
     inputs = processor(image, return_tensors="pt").to(device)
 

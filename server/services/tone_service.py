@@ -16,7 +16,6 @@ VALID_TONES = [
     "motivational"
 ]
 
-
 def rewrite_caption(text, tone):
 
     tone_prompts = {

@@ -17,7 +17,6 @@ LANGS = {
     "gujarati": "guj_Gujr",
 }
 
-
 def translate(text, lang):
     print(f"Available languages: {list(LANGS.keys())}")  # Debug
     print(f"Requested language: {lang}")  # Debug
@@ -29,5 +28,4 @@ def translate(text, lang):
         **inputs,
         forced_bos_token_id=tokenizer.convert_tokens_to_ids(LANGS[lang])
     )
-
     return tokenizer.decode(output[0], skip_special_tokens=True)
